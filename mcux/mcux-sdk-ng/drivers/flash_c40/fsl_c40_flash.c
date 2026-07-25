@@ -89,6 +89,11 @@
 
 #define C40_MAX_SUPER_SECTOR_BLOCK_AREA (512 * 1024)
 
+#elif FSL_FEATURE_FLASH_C40_BLOCK_SIZE_CODE == (2048 * 1024)
+
+/* RM: for 2 MB blocks, the first 1792 KB is protected with super sector granularity */
+#define C40_MAX_SUPER_SECTOR_BLOCK_AREA (1792 * 1024)
+
 #else
 #error "Unexpected flash block size"
 #endif
