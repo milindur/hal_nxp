@@ -1705,6 +1705,9 @@ Qspi_Ip_StatusType Qspi_Ip_IpWrite(uint32 instance,
     Qspi_Ip_StatusType status = STATUS_QSPI_IP_ERROR;
     uint32 padding;
     uint16 TotalSize = 0U;
+#if (FEATURE_QSPI_HAS_SFP == 1)
+    uint32 TxWatermark;
+#endif
 
     baseAddr = Qspi_Ip_BaseAddress[instance];
     DEV_ASSERT_QSPI(instance < QuadSPI_INSTANCE_COUNT);
@@ -1724,8 +1727,20 @@ Qspi_Ip_StatusType Qspi_Ip_IpWrite(uint32 instance,
 
 #if (FEATURE_QSPI_HAS_SFP == 1)
 
-    /* Setup water mark according to the transfer size to avoid underrun issue. */
-    Qspi_Ip_SetTxWatermark( baseAddr, (uint8)( (FEATURE_QSPI_TX_BUF_SIZE / 4U) - ((TotalSize / 4U) - 1U) ) );
+    /* Setup water mark according to the transfer size to avoid underrun issue.
+     * The transfer triggers once the buffer fill level reaches
+     * (FEATURE_QSPI_TX_BUF_SIZE / 4) - TBCT[WMRK] + 1 entries. The theoretical
+     * watermark for a single-entry transfer on a 1024-byte TX buffer (256) is
+     * not representable in the 8-bit TBCT[WMRK] field, so clamp it and pad the
+     * buffer below up to the resulting trigger level; entries beyond IDATSZ are
+     * not transmitted and are invalidated on the next transaction.
+     */
+    TxWatermark = (FEATURE_QSPI_TX_BUF_SIZE / 4U) - (((((uint32)TotalSize) + 3U) / 4U) - 1U);
+    if (TxWatermark > (QuadSPI_TBCT_WMRK_MASK >> QuadSPI_TBCT_WMRK_SHIFT))
+    {
+        TxWatermark = (QuadSPI_TBCT_WMRK_MASK >> QuadSPI_TBCT_WMRK_SHIFT);
+    }
+    Qspi_Ip_SetTxWatermark(baseAddr, (uint8)TxWatermark);
 
     Qspi_Ip_NewIpsTransaction(baseAddr, addr, TotalSize, SeqId);
 
@@ -1734,6 +1749,14 @@ Qspi_Ip_StatusType Qspi_Ip_IpWrite(uint32 instance,
     {
         /* Fill Tx buffer */
         Qspi_Ip_FillTxBuf(baseAddr, data, size, padding);
+
+        /* Pad Tx buffer up to the watermark trigger level if the clamped
+         * watermark requires a higher fill level than the transfer itself
+         */
+        while (Qspi_Ip_GetTxBufFill(baseAddr) < ((FEATURE_QSPI_TX_BUF_SIZE / 4U) - TxWatermark + 1U))
+        {
+            Qspi_Ip_WriteTxData(baseAddr, 0xFFFFFFFFU);
+        }
 
         /* Pad Tx buffer up to the minimum number of entries required by the device */
         Qspi_Ip_PadTxBuf(baseAddr);
