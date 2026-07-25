@@ -1,5 +1,5 @@
 /*
- * Copyright 2023 NXP
+ * Copyright 2023, 2026 NXP
  *
  * SPDX-License-Identifier: BSD-3-Clause
  */
@@ -248,7 +248,7 @@
 #define FSL_FEATURE_FLASH_C40_BLOCK_SIZE_CODE     (2048u * 1024u)
 /* @brief Code flash (PFLASH) has 4 blocks of 2 MiB each total size = 8 MiB */
 #define FSL_FEATURE_FLASH_C40_BLOCK_COUNT_CODE    (4u)
-/* @brief Data flash (DFLASH) window: 256 KiB */
-#define FSL_FEATURE_FLASH_C40_BLOCK_SIZE_DATA     (256u * 1024u)
+/* @brief Data flash (DFLASH): 128 KiB */
+#define FSL_FEATURE_FLASH_C40_BLOCK_SIZE_DATA     (128u * 1024u)
 
 #endif /* _S32K358_FEATURES_H_ */

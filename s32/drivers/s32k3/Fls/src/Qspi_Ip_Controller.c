@@ -1727,50 +1727,63 @@ Qspi_Ip_StatusType Qspi_Ip_IpWrite(uint32 instance,
 
 #if (FEATURE_QSPI_HAS_SFP == 1)
 
-    /* Setup water mark according to the transfer size to avoid underrun issue.
-     * The transfer triggers once the buffer fill level reaches
-     * (FEATURE_QSPI_TX_BUF_SIZE / 4) - TBCT[WMRK] + 1 entries. The theoretical
-     * watermark for a single-entry transfer on a 1024-byte TX buffer (256) is
-     * not representable in the 8-bit TBCT[WMRK] field, so clamp it and pad the
-     * buffer below up to the resulting trigger level; entries beyond IDATSZ are
-     * not transmitted and are invalidated on the next transaction.
+    /* A transfer with IDATSZ = 0 keeps TBDR locked and can never reach the
+     * watermark trigger level; reject it (status remains error).
      */
-    TxWatermark = (FEATURE_QSPI_TX_BUF_SIZE / 4U) - (((((uint32)TotalSize) + 3U) / 4U) - 1U);
-    if (TxWatermark > (QuadSPI_TBCT_WMRK_MASK >> QuadSPI_TBCT_WMRK_SHIFT))
+    if (TotalSize != 0U)
     {
-        TxWatermark = (QuadSPI_TBCT_WMRK_MASK >> QuadSPI_TBCT_WMRK_SHIFT);
-    }
-    Qspi_Ip_SetTxWatermark(baseAddr, (uint8)TxWatermark);
-
-    Qspi_Ip_NewIpsTransaction(baseAddr, addr, TotalSize, SeqId);
-
-    /* 01 - TBDR lock is open. QuadSPI considers IPS transfer. Master counter is started. */
-    if (STATUS_QSPI_IP_SUCCESS == Qspi_Ip_Sfp_WaitFsmState(baseAddr, 1U))
-    {
-        /* Fill Tx buffer */
-        Qspi_Ip_FillTxBuf(baseAddr, data, size, padding);
-
-        /* Pad Tx buffer up to the watermark trigger level if the clamped
-         * watermark requires a higher fill level than the transfer itself
+        /* Setup water mark according to the transfer size to avoid underrun issue.
+         * The transfer triggers once the buffer fill level reaches
+         * (FEATURE_QSPI_TX_BUF_SIZE / 4) - TBCT[WMRK] + 1 entries. The theoretical
+         * watermark for a single-entry transfer on a 1024-byte TX buffer (256) is
+         * not representable in the 8-bit TBCT[WMRK] field, so clamp it and pad the
+         * buffer below up to the resulting trigger level; entries beyond IDATSZ are
+         * not transmitted and are invalidated on the next transaction.
          */
-        while (Qspi_Ip_GetTxBufFill(baseAddr) < ((FEATURE_QSPI_TX_BUF_SIZE / 4U) - TxWatermark + 1U))
+        TxWatermark = (FEATURE_QSPI_TX_BUF_SIZE / 4U) - (((((uint32)TotalSize) + 3U) / 4U) - 1U);
+        if (TxWatermark > (QuadSPI_TBCT_WMRK_MASK >> QuadSPI_TBCT_WMRK_SHIFT))
         {
-            Qspi_Ip_WriteTxData(baseAddr, 0xFFFFFFFFU);
+            TxWatermark = (QuadSPI_TBCT_WMRK_MASK >> QuadSPI_TBCT_WMRK_SHIFT);
         }
-
-        /* Pad Tx buffer up to the minimum number of entries required by the device */
-        Qspi_Ip_PadTxBuf(baseAddr);
-
-        MCAL_DATA_SYNC_BARRIER();
-        MCAL_INSTRUCTION_SYNC_BARRIER();
-        /* 10 - TX buffer filled above threshold. Write transfer is triggered. SEQID is written. */
-        if (((baseAddr->FSMSTAT & QuadSPI_FSMSTAT_STATE_MASK) >> QuadSPI_FSMSTAT_STATE_SHIFT) == 2U)
+        if (TxWatermark == 0U)
         {
-            /* Add Fault Injection point for FR_TBUF flag */
-            MCAL_FAULT_INJECTION_POINT(FLS_FIP_FR_ERROR_IPWRITE);
+            /* Oversized transfer (contract violation); TBCT[WMRK] = 0 is
+             * invalid per the RM, use the smallest valid watermark.
+             */
+            TxWatermark = 1U;
+        }
+        Qspi_Ip_SetTxWatermark(baseAddr, (uint8)TxWatermark);
 
-            /* Wait until the command is sent */
-            status = Qspi_Ip_CmdWaitComplete(instance);
+        Qspi_Ip_NewIpsTransaction(baseAddr, addr, TotalSize, SeqId);
+
+        /* 01 - TBDR lock is open. QuadSPI considers IPS transfer. Master counter is started. */
+        if (STATUS_QSPI_IP_SUCCESS == Qspi_Ip_Sfp_WaitFsmState(baseAddr, 1U))
+        {
+            /* Fill Tx buffer */
+            Qspi_Ip_FillTxBuf(baseAddr, data, size, padding);
+
+            /* Pad Tx buffer up to the watermark trigger level if the clamped
+             * watermark requires a higher fill level than the transfer itself
+             */
+            while (Qspi_Ip_GetTxBufFill(baseAddr) < ((FEATURE_QSPI_TX_BUF_SIZE / 4U) - TxWatermark + 1U))
+            {
+                Qspi_Ip_WriteTxData(baseAddr, 0xFFFFFFFFU);
+            }
+
+            /* Pad Tx buffer up to the minimum number of entries required by the device */
+            Qspi_Ip_PadTxBuf(baseAddr);
+
+            MCAL_DATA_SYNC_BARRIER();
+            MCAL_INSTRUCTION_SYNC_BARRIER();
+            /* 10 - TX buffer filled above threshold. Write transfer is triggered. SEQID is written. */
+            if (((baseAddr->FSMSTAT & QuadSPI_FSMSTAT_STATE_MASK) >> QuadSPI_FSMSTAT_STATE_SHIFT) == 2U)
+            {
+                /* Add Fault Injection point for FR_TBUF flag */
+                MCAL_FAULT_INJECTION_POINT(FLS_FIP_FR_ERROR_IPWRITE);
+
+                /* Wait until the command is sent */
+                status = Qspi_Ip_CmdWaitComplete(instance);
+            }
         }
     }
 
