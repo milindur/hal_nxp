@@ -58,7 +58,7 @@ extern "C"{
     #define GMAC_IP_FEATURE_ORIGIN              (1U)/* GMAC */
 
     /*! @brief Number of instances */
-    #define FEATURE_GMAC_NUM_INSTANCES              (1U)
+    #define FEATURE_GMAC_NUM_INSTANCES              (1)
     /*! @brief Number of DMA channels (Assumption: DmaChannels = TxQueues = Rx Queues) */
     #define FEATURE_GMAC_NUM_CHANNELS               (3U)
     /*! @brief Number of MTL queues (Assumption: TxQueues = Rx Queues) */
